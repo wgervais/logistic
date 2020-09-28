@@ -1,0 +1,484 @@
+---
+title: "Logistic Regression Blues"
+author: "Will M. Gervais"
+date: "9/28/2020"
+output:
+  html_document:
+    toc: true
+    toc_depth: 2
+    toc_float: TRUE
+    theme: cerulean
+    highlight: tango
+
+---
+
+<style type="text/css">
+
+body, td {
+   font-size: 16px;
+   font-family: Garamond;
+}
+/* Headers */
+h1,h2,h3,h4,h5,h6{
+  font-family: Garamond;
+}
+code.r{
+  font-size: 12px;
+}
+pre {
+  font-size: 12px
+}
+</style>
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## The problem
+
+Every now and again, someone writes a paper/blog post/Tweetnado arguing that logistic regression is confusing and we therefore should do it less. Here's a brief post where I lay out why 1) I don't think that's true, 2) why people think it, and 3) how I like to analyze and report binary outcome data.
+
+I took my laptop here, and wrote about it:
+
+![](crimescene.JPG){width=50%}
+
+So...
+
+Are logistic regression outputs difficult to understand? Should we just drop logistic regression and run ordinary linear regressions on binary outcomes?
+
+I can understand why people want to just default to linear regression. After all, most of us are already pretty familiar with the outputs of linear regression. So it feels nice to wedge the unfamiliar things (binary outcomes) into a framework we understand (linear regression). And, if we're being perfectly honest, if most of one's audience is more familiar with linear regression than with logistic regression, there's a certain pragmatic rationale to running linear models on binary outcome data. Just because the audience will (think they?) understand what the outcomes mean. But understanding isn't an intrinsic property of something: it's an interaction between a thing, a communicator, and the audience.
+
+Which is easier to understand?
+
+- Mandarin
+- English
+- Algebra
+
+In this question, it's pretty obvious that none of them are intrinsically easier to understand. Instead, we readily recognize that the answer depends on what one is familiar with and what one wants to communicate.
+
+I think the linear versus logistic debate is a lot like this. Neither of them are inherently easier to understand. But one is more familiar to most, due to their life experiences so far, and the other might need to be translated a bit for people who aren't fluent in it. But that doesn't make it worse: it just means the audience doesn't speak it well. When this happens, don't blame the language. Don't blame the audience. Blame the speaker for not making an effort.
+
+**So my tl;dr take on logistic regression.** I think it's a mistake to use regular ol' linear regression instead of logistic regression on binary data just because the audience is familiar with the outputs. In statistics, the familiar is seductive. But that doesn't mean we should automatically rush to report things in familiar ways. Instead, *I think we should find ways to report the unfamiliar in ways that still make sense.*
+
+## Required skills
+
+I see a few key steps to making sense of logistic regression. And each step is pretty easy, and basically conceptually similar to stuff that we're all already used to doing with basic linear regression. If you can do a couple of simple things, I think you're well-poised to make logistic regression easy (and fun!).
+
+Can you:
+
+1) translate between unstandardized and standardized betas?
+2) Interpret simple slopes in a regression interaction?
+
+If you can do that, you can use those concepts as scaffolding to think clearly about logistic regression.
+
+
+## Facing the unfamiliar
+
+Linear regression estimates are *easy to understand* we are told. They're just expressing the unit of change associated with one variable over change in the other. And the units just correspond to what's being measured.
+
+Predict a person's self-reported Conscientiousness from their reaction time on a computer task, and the parameter estimate is just the Likert units of C that change for every millisecond change in response time; or, alternatively, you can rescale both the C scores and the reaction time in terms of their measured standard deviations and do the regression again to get slightly different estimate values. To express your uncertainty, you'll want to calculate a range of values according to a procedure that gives a range including the (unknown) true value 95% of the time that you use it, but you don't know if it worked this time. And if you want to make a binary decision about things, you can then calculate the probability of getting the same or weirder data, conditional on no true association and a bunch of other assumptions, expressed to the third decimal, and see if it is smaller than a prespecified threshold. 
+
+When people say that linear regression outputs are simple, they are referring to the previous paragraph, which is **WILDLY** incomprehensible to anyone who hasn't already been trained in that specific type of mental jujitsu. But if you are a bit familiar with regression, you know that I've just described an unstandardized beta, its standardized friend $\beta$, a confidence interval, and a p-value. None of that shit was *easy to understand*, you're just so used to that particular brand of shit that it was easy for you to swim through.
+
+So the first step to realizing that logistic regression outputs aren't harder to understand than linear regression outputs is to realize that linear regression outputs aren't easy to understand either.
+
+To show you how logistic models can be easy to run, understand, and report, I put together a silly dataset and will do some analyses on it.
+
+
+# The Distant Future, The Year 2000
+
+![](conchords.jpg){width=90%}
+
+According to New Zealand duo *Flight of the Conchords*, in the year 2000 all humans are dead, slain by robots. When did this start? Had humans already been replaced by robots in the year 1997? How would you tell? We fly you back in time to find out.
+
+You go back in time and collect some data on ~ 1500 (apparent) people. You get data on a few key predictors:
+
+- you record them for a minute and jot down if you think they make beeping sounds
+- you count how many books on robot maintenance they own
+- you devise a "need for poetry" self-report questionnaire, because you know that robots cannot abide poetry and are averse to lying about it
+
+Finally, you use a truth-ray to blast everyone and force them to divulge whether they are robots. So you have an outcome measure (are they robots?).
+
+So now you can try to predict whether or not they are a robot (binary outcome) from whether or not they beep (binary measure), their number of books (count variable), and the NFP questionnaire (Likert).
+
+Model looks something like:
+
+$Robot \sim Binomial(1, p)$
+
+$logit(p) = \alpha +  \beta_{beep} + \beta_{books} + \beta_{need}$
+
+I prefer to do my work in Bayesian estimation, for various reasons. What follows is how I'd go about summarizing my inferences in this framework. But you could easily do all of this in some capacity in a frequentist framework if you want to.
+
+So I got a dataset and did some analyses using some of my favorite R packages, like so:
+
+
+```{r libraries, echo = T, message=F, error=FALSE}
+library(tidyverse)
+library(rethinking)
+library(tidybayes)
+
+future <- read.csv('distant-future.csv')
+```
+
+
+
+
+The dataset is just as described, a variable for robot status, one for beeping, one for books, and one for my stupid questionnaire.
+
+```{r summaries, echo = T, error=F}
+head(future)
+summary(future)
+```
+
+
+Looks good. To translate the above model into one we can run, I'm using the old version of McElreath's rethinking package. Feel free to 'you do you,' though, in some other software package.
+
+First up, I'll just center all my predictors to make things easier on me later.
+
+```{r centering, echo = T}
+future <- future %>%
+  mutate(beep = scale(beep, center = T, scale = F)[,],
+         books = scale(books, center = T, scale = F)[,],
+         nfpZ = scale(nfp, center = T, scale = T)[,])
+```
+
+'beep' and 'books' have actual units (Does it beep? How many books?) so I didn't standardize them, only center. Need For Robots is in some garbage Likert units that don't mean shit, so why not standardize them?
+
+Here's the code for the model I'm running.
+
+
+```{r model, echo = T, include = F, cache = T, message = F, error = F}
+m1 <- map2stan(
+  alist(
+    robot ~ dbinom(1, p),
+    logit(p) <- a + b_beep*beep + b_book*books + b_nfp*nfpZ,
+    c(a, b_beep, b_book, b_nfp) ~ dnorm(0,1)
+  ), data=future, WAIC= F,
+  chains=1, cores=1, 
+  iter=9000, warmup=1000
+)
+```
+
+
+```{r model2, echo = T, eval=F}
+m1 <- map2stan(
+  alist(
+    robot ~ dbinom(1, p),
+    logit(p) <- a + b_beep*beep + b_book*books + b_nfp*nfpZ,
+    c(a, b_beep, b_book, b_nfp) ~ dnorm(0,1)
+  ), data=future, WAIC= F,
+  chains=1, cores=1, 
+  iter=9000, warmup=1000
+)
+```
+
+The first lines are just the model I laid out above:
+
+```{r, echo = T, eval = F}
+robot ~ dbinom(1, p),
+logit(p) <- a + b_beep*beep + b_book*book + b_nfp*nfpZ
+```
+
+The next bit is just laying out some very safe and non-stupid priors (I hope) for the intercept and slopes:
+
+```{r, echo = T, eval = F}
+c(a, b_beep, b_book, b_nfp) ~ dnorm(0,1)
+```
+
+These priors are reaaaallly safe. For the betas, I'm saying that any relationships will probably be tiny (centered on beta = 0), but they could also be big (SD of a normal is 1). That's it.
+
+The last bit are just details of how to run the model. Nothing stats-ey here.
+
+There, the model's done! I have Done A Statistics! What do I do with it now?
+
+
+## Interpreting the Output
+
+So the model has run and I would like to know what it tells me. At this point SPPS or R or whatever will probably vomit up a summary if you want it to. If SPSS, it'll have unstandardized and standardizeds coefficients, standard error for the unstandardized, then some p-values and gold stars and whatnot.
+
+In the rethinking package, the base summary isn't too far different:
+
+```{r summary, echo = T}
+precis(m1)
+```
+
+You've got point estimates for each parameter (mean), the standard errors for the estimate, credible interval bounds (rethinking package sets them at 89%, but you can change them) then some diagnostics. 
+
+In terms of the parameters (the point estimates and interval), everything should look just like they would in linear regression, with one catch: *what the fuck does anything mean?*
+
+Here's where people chime in and say that the output of logistic regression is confusing.
+
+In an ordinary linear regression, we could look at those parameter estimates and say that the intercept is at -1.73 arbitrary units. For each arbitrary unit one gets higher on beep, one gets .41 arbitrary units higher on the outcome. That seems easy. But what the hell are the numbers in the logistic one? As people get a standard deviation higher in need for poetry, they get [waves in frustration at -.89] and for each additional book they have, they get [screams into the void .18 times]. What's going on here?
+
+Well, remember how in linear regression we could translate from silly units (change in Likerts per logged millisecond?) to standard ones ($\beta$)? Well at a very imprecise conceptual level we can basically take the logistic regression output and translate it into units that we can wrap our heads around.
+
+Logistic regression is basically just linear regression on log-odds. That's it. Nothing fancy. You've just done the same thing you've done a gajillion times in linear regression, but now you're cooking with log-odds. And if you're like me, you still don't have an intuitive grasp of what log-odds are like, so my next step is to **TRANSLATE EVERYTHING BACK INTO SOMETHING I CAN EASILY THINK ABOUT.** Like probabilities.
+
+## Imaginary People
+
+You now have a posterior distribution that describes the parameters and whatnot from your model. I think the easiest way to make smart and intelligible inferences from a logistic model is through looking at what your model predicts about imaginary people who have certain characteristics, based on your predictors. So conceptually it means that I take the posterior -- which in my mind is some sort of n-dimensional pile of lumps and hills and valleys -- and I take a giant knife and I cut it along some axis and then look at the outline of what's left. That knife is giving me a snapshot of the model's predictions at values of every predictor that describe the axis along which I'm cutting. What does everything do when I marginalize it with a conceptual knife?
+
+And that sounds fancy and might be odd to picture, so another way to think of it is that marginalizing things like this is as simple as **making predictions about imaginary people.**
+
+You're probably already super used to doing this. Hell, you already did it when you looked at a model's intercept: the intercept is just the model's prediction for imaginary people if you set every predictor to zero. And because we centered all of our predictors first, the intercept is the predicted value at the average level of everything.
+
+And you're also used to marginalizing things if you've looked at an interaction in regression with simple slopes. Simple slopes are the best fit line for one predictor if we mentally move to different levels of another predictor (usually and boringly +/- 1 SD). But you can zoom in and out and create predictions for imaginary people at any levels of the predictors that you want. And when you do so, you can hold all the other predictors constant at whatever levels you want! YAY!
+
+## Back to Robots
+
+Back to our model, we've run it and got the following output:
+
+```{r summary2, echo = T}
+precis(m1)
+```
+
+Looking at the 'beep' variable, this says that folks who beep are .41 log-odds units things higher than people who don't beep. Say what the what now? Here's why people say logistic regression outputs don't make sense. What the hell is that .41 for beepers?
+
+One approach is to exponentiate the coefficient. This gives you an odds ratio (SPSS spits this out for you too). You do that and you find that beepers are more likely to be robots, *Odds Ratio* = `r exp(.41) %>% round(2)`. Similarly, you could find that each additional book on robotics owned increases the odds of being a robot by *Odds Ratio* = `r exp(.18) %>% round(2)` People often find odds ratios confusing, so let's see if we can't do better.
+
+Let's construct imaginary beepers who are typical on all other predictors, and imaginary non-beepers who are otherwise typical, and describe them!
+
+First, we can sample from the posterior just to have something to play with:
+
+```{r sample, echo=T}
+post <- data.frame(extract.samples(m1))
+head(post)
+```
+
+
+There you go, 10000 samples from the posterior, with all the predictors and whatnot. Then you can use this to start making imaginary people!
+
+To do this, you basically just generate predictions from the model at different levels of the predictors. This just means plugging in our chosen values for each predictor. 
+
+I think of the parameters from the logistic regression as knobs. I dial each knob up or down to create a very specific sort of imaginary person. Turn the knob all the way up for `b_book` and all the way down for `b_beep` and all the way up for `b_nfp` and I create predictions for an imaginary person with all the robotics books, no beeping, and max poetry love! Voila! 
+
+![](knobs.jpg)
+
+Here's what that code would look like to get predicted probabilities of roboticism for people who beep but are otherwise ordinary. I just crank up the `b_beep` knob and don't touch the other knobs, like this: 
+
+```{r beeper, echo = T, eval=T}
+
+beepers <- post$a +  # the intercept
+           post$b_beep * max(future$beep) + # the value for people who beeped 
+           post$b_book * 0 + # this is redundant, but it's average book
+           post$b_nfp * 0  # again redundant, but it's average Need scores
+
+head(beepers)
+```
+
+There, now we have 10000 model predicted scores for people who beep but are otherwise entirely average. There's a catch: we're still in the weird unit world of logistic regression. So we want a magic wand to translate us back into probabilities. That's the `logistic()` function in the rethinking package.
+
+So you could translate it thusly:
+
+```{r logistic, echo = T}
+beepers <- beepers %>% logistic()
+
+head(beepers)
+```
+
+
+There you go! Thanks to the babel fish that is `logistic()`, you now have a bunch of posterior-predicted probabilities that an otherwise average individual who beeps is a robot! `head()` just shows the first five of them.
+
+Here's what the code would look like if we want to get predicted probabilities for the following imaginary people:
+
+1) beepers (otherwise ordinary)
+2) non-beepers (otherwise ordinary)
+3) individuals who max out the Need For Poetry measure (otherwise ordinary)
+4) people at floor on Need For Poetry measure (otherwise ordinary)
+5) non-beeping individuals who maximally love poetry and have zero books on robotics
+6) beepers who have 7 robotics books, hate poetry
+7) otherwise typical people with NO robotics books
+8) otherwise typical people with MAX (9) robotics books
+
+Again, look at each line and see how I'm turning the knobs for each parameter.
+
+I'll move all these into a new 'probs' data frame.
+
+```{r predictions, echo = T}
+probs <- post %>%
+  mutate(  # calculate them all, with the values we want
+    beepers   = logistic(a + b_beep * max(future$beep) + b_book * 0 + b_nfp * 0),
+    nonbeep   = logistic(a + b_beep * min(future$beep) + b_book * 0 + b_nfp * 0),
+    poets     = logistic(a + b_beep * 0 + b_book * 0 + b_nfp * max(future$nfpZ)),
+    nonpoets  = logistic(a + b_beep * 0 + b_book * 0 + b_nfp * min(future$nfpZ)),
+    no5       = logistic(a + b_beep * min(future$beep) + b_book * min(future$books) + b_nfp *max(future$nfpZ)),
+    no6       = logistic(a + b_beep * max(future$beep) + b_book * (min(future$books) + 7) + b_nfp * min(future$nfpZ)), # remember we centered but didn't standardize
+    norobos     = logistic(a + b_beep * 0 + b_book * min(future$books) + b_nfp *0) ,
+    robos       = logistic(a + b_beep * 0 + b_book * max(future$books) + b_nfp * 0)
+  ) %>% 
+  select(beepers:robos)
+```
+
+
+Cool! So now you have 10000 predicted probabilities of being a robot for each of the predictor inputs you wanted. You can summarize them all sorts of ways. First up, you could ask for the posterior medians, just to get a point estimate of a middle-of-the-road estimate.
+
+```{r medians, echo=T}
+
+probs %>% sapply(median)
+```
+
+BOOM! About 18% of beepers are robots. 1% of non-beeping individuals who maximally love poetry and have zero books on robotics are robots. Among beepers who have 7 robotics books, hate poetry: 66% robots!
+
+Slightly fancier, you could use `precis()` to get the point estimate and intervals...
+
+```{r sums, echo = T}
+precis(probs)
+```
+
+
+This tells you a point estimate for the predicted probability of roboticism for each of our imaginary groups of people (with a density interval to boot). Very cool!
+
+To unpack this, look at Beepers and Nonbeepers. The probability of being a robot is higher for Beepers (`r mean(probs$beepers) %>% round(2)`) than for Nonbeepers (`r mean(probs$nonbeep) %>% round(2)`), but the difference isn't especially impressive. Beeping isn't a great predictor of roboticism.
+
+In comparison, look at individuals with 9 robotics books (`r mean(probs$robos) %>% round(2)*100`% robots) relative to no robotics books (`r mean(probs$norobos) %>% round(2)*100`% robots). Now we're talking! The probability more than triples!
+
+And if you really want to cook with gasoline, `r mean(probs$poets) %>% round(2)*100`% of poetry lovers are robots, compared to `r mean(probs$nonpoets) %>% round(2)*100`% of poetry haters. That relative risk is a whopping `r (mean(probs$nonpoets)/mean(probs$poets)) %>% round(2)`.
+
+
+You can also look for posterior probabilities of differences here. What's the probability that Min Poets are more likely to be robots than Max Poets?
+
+Here's a nifty function I wrote for comparing posterior things:
+
+```{r bigger, echo=T}
+bigger <- function(first, second) {
+  pr.big <- ifelse(first > second, 1, 0) %>% mean
+  return(pr.big)
+}
+
+```
+
+
+So if I want to know the posterior probability for Min Poet > Max Poet, I type ` bigger(probs$nonpoets, probs$poets) %>% round(2)`, and the probability is `r bigger(probs$nonpoets, probs$poets) %>% round(2)`, once we do our rounding. It's really something like .9999999999, but it's silly to pretend we're doing anything that precise. So call it > .99 or whatever. There's a very reliable difference there. Just getting a prob = 1 isn't all that satisfying, so you could also plot the posterior densities using the very nifty `tidybayes` package.
+
+
+```{r poet plot, echo = T}
+
+# grab the poet splits, make it long format
+poet <- probs %>%
+  select(poets, nonpoets) %>%
+  pivot_longer(poets:nonpoets, values_to = "probs", names_to = "grp") %>%
+  mutate(grp = factor(grp))%>%
+  data.frame()
+
+ggplot(data = poet, aes(x = probs, y = grp)) +
+  geom_halfeyeh(alpha = .7, adjust = 2) +
+  labs(x = 'probability robot') +
+  scale_x_continuous(limits = c(0, .6)) +
+  theme_bw() +
+  theme(text = element_text(family="Times"),
+        axis.text = element_text(size = 16),
+        axis.title = element_text(size = 20),
+        axis.ticks = element_blank(),
+        panel.grid.minor.y = element_blank(),
+        panel.grid.minor.x = element_blank(),
+        legend.position = "none",
+        panel.background = element_blank(),
+        plot.background = element_blank(),
+        panel.border = element_rect(color="darkgrey"),
+        axis.title.y = element_blank(),
+        )
+```
+
+And there you have posterior densities for model-predicted probabilities of roboticism for people super high and super low on need for poetry. The height of the curve indexes how good the model guess is: fat part of curve = most credible, skinny tail = not credible. The line shows you the most credible point estimate, the 66% credible interval, and the 95% credible interval. 
+
+Seems a bit weird to compare max to mins on a given predictor, right? Well that `bigger()` function can be used in other ways. Is an association in our model reliably bigger than zero? `bigger(post$b_book, 0)` yields a probability of `r bigger(post$b_book, 0)` that the beta is bigger than zero. So yeah, that association is there (trust me, it's more interesting if your dataset has more marginal predictors...posterior probability = .5 means no association).
+
+Okay, so we can create lots of imaginary people and make predictions about them. What's the point of that?
+
+## Is that it? What about theory?
+
+Really, once you've gotten your posterior you can slice and dice the model-predicted probabilities however you like. You can calculate relative risks for variables. Odds ratios. Comparisons of people high or low on a given variable. Predicted probabilities of people who are high on some variables and low on others.
+
+Ideally, you'll have some sort of theoretical guidance here.
+
+Imagine there are three rival camps of scientists out there. One says that the ONLY way to tell who's a robot is to listen for beeping. Another set of scientists say that the ONLY way to tell who's a robot is to count their robotics books. And another camp says that you should just give them the shitty poetry questionnaire, since we know that robots hate poetry.
+
+Okay, here you have 3 different theories making three different predictions. So why not just create imaginary people corresponding to each theory? So you want people who are otherwise ordinary, but (per each theory):
+
+- beepers
+- maxed out on robotics books
+- minned out on poetry love
+
+Then you compare those imaginary people to baseline.
+
+```{r theories, echo = T}
+theories <- post %>%
+  mutate(baseline = logistic(a),
+         beep = logistic(a + b_beep * max(future$beep)),
+         robo = logistic(a + b_book * max(future$books)),
+         poetry = logistic(a + b_nfp * min(future$nfp))) %>%
+  select(baseline:poetry) 
+
+precis(theories)
+```
+
+Whoa there! Looks like 1) you want a theory that incorporates them all, but 2) poetry theory > book theory >>> beep theory.
+
+Let's plot those posterior densities to eyeball things:
+
+```{r theory plot, echo = T}
+theoriesT <- theories %>%
+  pivot_longer(baseline:poetry, names_to = 'theory', values_to = 'probs') %>%
+  mutate(theory = factor(theory)) %>%
+  data.frame()
+
+ggplot(data = theoriesT, aes(x = probs, y = theory)) +
+  geom_halfeyeh(alpha = .7, adjust = 2) +
+  labs(x = 'probability robot') +
+  scale_x_continuous(limits = c(0, .6)) +
+  theme_bw() +
+  theme(text = element_text(family="Times"),
+        axis.text = element_text(size = 16),
+        axis.title = element_text(size = 20),
+        axis.ticks = element_blank(),
+        panel.grid.minor.y = element_blank(),
+        panel.grid.minor.x = element_blank(),
+        legend.position = "none",
+        panel.background = element_blank(),
+        plot.background = element_blank(),
+        panel.border = element_rect(color="darkgrey"),
+        axis.title.y = element_blank(),
+        )
+```
+
+
+When you look at it this way, it looks like poetry and books really are important. If you're high on robotics books or really low on poetry love, you're way more likely to be a robot. And there's some overlap between those two theories, so keep them both in mind. Beeping maybe matters a little, but it's diagnostically pretty overrated.
+
+And if you really want to have fun here, try doing it when there are interactions involved. In that case, making these imaginary model-predicted people is THE BEST (in my lousy opinion) way to make sense of anything. 
+
+Now let's say you don't have good theories to pit against each other like this. Now your challenge is to come up with some sort of practical difference to illustrate things. Think of a couple of different types of imaginary people to compare. Super high versus super low on key variables, something like that. Then look at the probabilities.
+
+## BONUS FEATURE
+
+I have been showing a lot of different inferences and comparisons one could make. But guess how many models I've run?
+
+One model. One statistical test. Then I'm just exploring the inference space via manipulating my posterior draws.
+
+That's nice.
+
+Imagine this in an actually complicated model (say a multilevel model with interactions). Running the model once and then pulling inferences at different demographic predictors is very sexy statisticizing.
+
+## Take Home Messages
+
+Now, this robot business was a bit of a silly example^[the data actually came from a paper we're publishing, but I changed the variable names...sneaky!]. But hopefully it illustrated how it can be really easy to interpret logistic regression outputs. Are the outputs of linear regression tough to understand? I mean, sure. But so are the outputs of linear regression. We're just used to the latter.
+
+For me, logistic regression CAN make a ton of sense and CAN be really easy to communicate. But you've gotta do some unpacking for your reader.
+
+For me, the recipe is something like this:
+
+1) run the model
+2) pull the posterior predictions
+3) marginalize! use the model's predictions to create imaginary people!
+4) translate the goofy log-odds output back into probabilities! 
+5) compare those imaginary people!
+
+Basically, if you're used to writing about unstandardized regression coefficients on real-world applicable units, or standardized betas for garbage arbitrary units, and you can think about simple slopes, then you are ready to interpret and describe logistic regressions in ways that make sense to anyone!
+
+In fact, for my money, I think a statement like "the probability that someone's a robot is .45 [.39, .50] if they can't stand poetry, but only .18 [.15, .21] if they are beeping" is WAY EASIER to understand than is some table with standardized betas and p-values. It just takes a little bit of effort on your part.
+
+If you talk to a journalist or regular human being about your research, try giving them the following 2 choices for statistics to write/think about:
+
+- the standardized $\beta$ equals .43
+- the probability jumps from .18 to .45 between these two different types of people
+
+Then tell them that your psych stats colleagues say the latter is from the "hard to understand" statistical model and tell me how they react.
